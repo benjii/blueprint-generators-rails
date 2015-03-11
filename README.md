@@ -1,8 +1,6 @@
 # Blueprint::Generators::Rails
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/blueprint/generators/rails`. To experiment with that code, run `bin/console` for an interactive prompt.
-
-TODO: Delete this and the text above, and describe your gem
+The Blueprint Generators gem provides various Rake tasks for creating blueprints of your software.
 
 ## Installation
 
@@ -22,7 +20,13 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+Create a Conceptual Model by doing this;
+
+```ruby
+rake blueprint:cm
+```
+
+And then cut-and-paste the Pogoscript output into the Blueprint [Scratchpad](http://blooming-waters-9183.herokuapp.com/scratchpad)
 
 ## Development
 
