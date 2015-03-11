@@ -10,7 +10,7 @@ Gem::Specification.new do |spec|
   spec.email         = ["ben.deany@gmail.com"]
 
   spec.summary       = %q{Blueprint PogoScript generators for diagrams.}
-  spec.homepage      = "TODO: Put your gem's website or public repo URL here."
+  spec.homepage      = "http://blooming-waters-9183.herokuapp.com"
 
   spec.files         = `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
   spec.bindir        = "exe"
