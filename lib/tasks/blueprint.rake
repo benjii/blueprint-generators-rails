@@ -8,7 +8,7 @@ namespace :blueprint do
 
     models = ActiveRecord::Base.descendants
     models.each { |m|
-      pogo << "\n concept \"" + m.name + "\"\n"
+      pogo << "\n concept \"" + humanise(m.name) + "\"\n"
 
       associations = m.reflect_on_all_associations
       associations.each { |a|
@@ -18,9 +18,9 @@ namespace :blueprint do
 
         case a.macro
           when :belongs_to, :has_one
-            pogo << "  has one \"" + a.name.to_s.singularize.capitalize + "\"\n"
+            pogo << "  has one \"" + humanise(a.name.to_s.singularize.capitalize) + "\"\n"
           when :has_many
-            pogo << "  has many \"" + a.name.to_s.singularize.capitalize + "\"\n"
+            pogo << "  has many \"" + humanise(a.name.to_s.singularize.capitalize) + "\"\n"
           else
             # TODO error condition
         end
@@ -46,5 +46,20 @@ namespace :blueprint do
   desc 'Alias for the \'cm\' task'
   task :conceptualize => :cm do
   end
+
+  private
+
+    def self.humanise(str)
+      # this block applies a naming clean-up by camel-casing any words after an underscore (e.g.: Invited_by => InvitedBy)
+
+      tokens = str.scan(/[_]+[\w]/)
+      unless tokens.empty?
+        tokens.each { |t|
+          str[t]= t[-1, 1].capitalize
+        }
+      end
+
+      str
+    end
 
 end
