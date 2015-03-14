@@ -39,4 +39,12 @@ namespace :blueprint do
     puts ''
   end
 
+  desc 'Alias for the \'cm\' task'
+  task :conceptualise => :cm do
+  end
+
+  desc 'Alias for the \'cm\' task'
+  task :conceptualize => :cm do
+  end
+
 end
