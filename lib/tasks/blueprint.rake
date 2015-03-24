@@ -10,6 +10,10 @@ namespace :blueprint do
     models.each { |m|
       pogo << "\n concept \"" + humanise(m.name) + "\"\n"
 
+      unless m.superclass.to_s == 'ActiveRecord::Base'
+        pogo << "  is a \"" + humanise(m.superclass.to_s.singularize.capitalize) + "\"\n"
+      end
+
       associations = m.reflect_on_all_associations
       associations.each { |a|
 
