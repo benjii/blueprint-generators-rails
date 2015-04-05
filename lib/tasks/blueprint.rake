@@ -1,17 +1,39 @@
 namespace :blueprint do
 
   desc 'Generate a Conceptual Model diagram for the current Rails project'
-  task :cm => :environment do
+  task :cm, [:options] => :environment do |t, args|
     Rails.application.eager_load!
 
-    pogo = "conceptual model for \"" + Rails.application.class.parent_name + "\""
+    # for debugging purposes
+    step_count = 1
+
+    app_name = Rails.application.class.parent_name
+    pogo = "conceptual model for \"" + app_name + "\""
+
+    if args[:options] == 'debug'
+      puts "#{step_count}. Generating conceptual model PogoScript for " + app_name
+      step_count += 1
+    end
 
     models = ActiveRecord::Base.descendants
     models.each { |m|
-      pogo << "\n concept \"" + humanise(m.name) + "\"\n"
+
+      concept_name = humanise(m.name)
+      pogo << "\n concept \"" + concept_name + "\"\n"
+
+      if args[:options] == 'debug'
+        puts "#{step_count}. Adding concept " + concept_name
+        step_count += 1
+      end
 
       unless m.superclass.to_s == 'ActiveRecord::Base'
-        pogo << "  is a \"" + humanise(m.superclass.to_s.singularize.capitalize) + "\"\n"
+        is_a_name = humanise(m.superclass.to_s.singularize.capitalize)
+        pogo << "  is a \"" + is_a_name + "\"\n"
+
+        if args[:options] == 'debug'
+          puts "#{step_count}. Concept " + concept_name + " is a " + is_a_name
+          step_count += 1
+        end
       end
 
       associations = m.reflect_on_all_associations
@@ -22,11 +44,33 @@ namespace :blueprint do
 
         case a.macro
           when :belongs_to, :has_one
-            pogo << "  has one \"" + humanise(a.name.to_s.singularize.capitalize) + "\"\n"
+            has_one_name = humanise(a.name.to_s.singularize.capitalize)
+            pogo << "  has one \"" + has_one_name + "\"\n"
+
+            if args[:options] == 'debug'
+              puts "#{step_count}. Concept " + concept_name + " has one " + has_one_name
+              step_count += 1
+            end
+
           when :has_many
-            pogo << "  has many \"" + humanise(a.name.to_s.singularize.capitalize) + "\"\n"
+            has_many_name = humanise(a.name.to_s.singularize.capitalize)
+            pogo << "  has many \"" + has_many_name + "\"\n"
+
+            if args[:options] == 'debug'
+              puts "#{step_count}. Concept " + concept_name + " has one " + has_many_name
+              step_count += 1
+            end
+
           else
-            # TODO error condition
+            # TODO support other macro types and variants (i.e.: has_and_belongs_to_many, through, etc)
+
+            if args[:options] == 'debug'
+              puts "#{step_count}. Did not recognise macro type!"
+              step_count += 1
+            end
+
+          # TODO error condition
+
         end
       }
     }
