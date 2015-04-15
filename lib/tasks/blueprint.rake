@@ -121,11 +121,11 @@ namespace :blueprint do
     puts ''
     puts 'Navigate to the link below and paste the provided script into the editor'
     puts ''
-    puts '        http://blooming-waters-9183.herokuapp.com/scratchpad/'
+    puts '        http://blueprint.anaxim.io/scratchpad/'
     puts ''
-    puts '==== * START * ===='
+    puts '~~~~'
     puts pogo
-    puts '==== * END * ===='
+    puts '~~~~'
     puts ''
     puts ''
   end
