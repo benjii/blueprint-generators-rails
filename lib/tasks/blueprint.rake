@@ -121,7 +121,7 @@ namespace :blueprint do
     puts ''
     puts 'Navigate to the link below and paste the provided script into the editor'
     puts ''
-    puts '        http://blueprint.anaxim.io/scratchpad/'
+    puts '        http://anaxim.io/scratchpad/'
     puts ''
     puts '~~~~'
     puts pogo
