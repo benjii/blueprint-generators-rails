@@ -3,7 +3,7 @@ namespace :blueprint do
   @debug = false
 
   desc 'Generate a Conceptual Model diagram for the current Rails project'
-  task :cm, [:options] => :environment do |t, args|
+  task :cm, [:options] do |t, args|
     # Rails.application.eager_load!
 
     # set the debug flag
