@@ -57,7 +57,7 @@ namespace :blueprint do
                 print_debug step_count, "Adding concept " + concept_name
                 step_count += 1
 
-                unless super_clazz == 'ActiveRecord::Base'
+                unless super_clazz.strip == 'ActiveRecord::Base'
                   is_a_name = super_clazz.singularize
 
                   # add the node relationship to the concept
@@ -71,7 +71,7 @@ namespace :blueprint do
               # search for a 'has_one' or 'belongs_to' declaration
               a, has_one_clazz = line.match(/(has_one|belongs_to) :([^,]+)/).try(:captures)
               unless has_one_clazz.nil?
-                has_one_name = has_one_clazz.capitalize.singularize.strip
+                has_one_name = has_one_clazz.classify.singularize.strip
 
                 # add the node relationship to the concept
                 model[concept_name].push({ :type => 'has one', :name => has_one_name })
@@ -83,7 +83,7 @@ namespace :blueprint do
               # search for a 'has_many' declaration
               b, has_many_clazz = line.match(/(has_many) :([^,]+)/).try(:captures)
               unless has_many_clazz.nil?
-                has_many_name = has_many_clazz.capitalize.pluralize.strip
+                has_many_name = has_many_clazz.classify.pluralize.strip
 
                 # add the node relationship to the concept
                 model[concept_name].push({ :type => 'has many', :name => has_many_name })
@@ -96,7 +96,7 @@ namespace :blueprint do
               c, habtm_clazz = line.match(/(has_and_belongs_to_many) :([^,]+)/).try(:captures)
               unless habtm_clazz.nil?
                 # this is a many-to-many, so we add two 'has many' relationships (one of each side)
-                habtm_name = habtm_clazz.capitalize.pluralize.strip
+                habtm_name = habtm_clazz.classify.pluralize.strip
 
                 # add the first side of the 'has many' if it does not already exist
                 if model[concept_name].find { |v| v[:type] == 'has many' && v[:name] == habtm_name }.nil?
