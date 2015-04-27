@@ -4,7 +4,7 @@ namespace :blueprint do
 
   desc 'Generate a Conceptual Model diagram for the current Rails project'
   task :cm, [:options] => :environment do |t, args|
-    Rails.application.eager_load!
+    # Rails.application.eager_load!
 
     # set the debug flag
     @debug = args[:options] == 'debug'
@@ -16,87 +16,112 @@ namespace :blueprint do
     step_count = 1
 
     # get the configured app name
-    app_name = Rails.application.class.parent_name
+    app_name = Dir.pwd.split('/').last.capitalize
+    # app_name = Rails.application.class.parent_name
 
-    print_debug step_count, "Generating conceptual model PogoScript for " + app_name
+    print_debug step_count, "Application name is " + app_name
     step_count += 1
 
-    concepts = ActiveRecord::Base.descendants
-    concepts.each { |m|
-      next if m.name.starts_with?'HABTM' # we skip Rails 'special' HABTM model classes
+    unless Dir.exist?(Dir.pwd + '/app/models')
+      print_debug step_count, 'Could not find models directory. Stopping analysis.'
+      return 0
+    end
 
-      concept_name = humanise(m.name)
+    Dir.chdir(Dir.pwd + '/app/models') do
 
-      # add the concept to the model hash
-      model[concept_name] = [ ]
+      # list all files in the directory
+      Dir.foreach('.') { |f|
 
-      print_debug step_count, "Adding concept " + concept_name
-      step_count += 1
+        # only deal with files that have a '.rb' extension
+        if File.extname(f) == '.rb'
+          # puts "Found: #{f}"
 
-      unless m.superclass.to_s == 'ActiveRecord::Base'
-        is_a_name = humanise(m.superclass.to_s.singularize.capitalize)
+          # process each file
+          File.open(f) do |m|
+            concept_name = nil
 
-        # add the node relationship to the concept
-        model[concept_name].push({ :type => 'is a', :name => is_a_name })
+            # process each line of the file
+            m.each_line do |line|
 
-        print_debug step_count, "Concept " + concept_name + " is a " + is_a_name
-        step_count += 1
-      end
+              # search for the class declaration line
+              clazz, super_clazz = line.match(/class ([^<]*) < (.*)/).try(:captures)
 
-      associations = m.reflect_on_all_associations
-      associations.each { |a|
+              # if we find a class declaration line, add the new concept to the model
+              unless clazz.nil?
+                # puts "Parsed: #{clazz} : #{super_clazz}"
+                concept_name = clazz.pluralize
 
-        # TODO this is an OK solution but has some shortcomings - we need to figure out how to get the actual
-        # TODO associated model name (not the macro name which we then singularize and capitalize)
+                # add the concept to the model hash
+                model[concept_name] = [ ]
 
-        case a.macro
-          when :belongs_to, :has_one
-            has_one_name = humanise(a.name.to_s.singularize.capitalize)
+                print_debug step_count, "Adding concept " + concept_name
+                step_count += 1
 
-            # add the node relationship to the concept
-            model[concept_name].push({ :type => 'has one', :name => has_one_name })
+                unless super_clazz == 'ActiveRecord::Base'
+                  is_a_name = super_clazz.singularize
 
-            print_debug step_count, "Concept " + concept_name + " has one " + has_one_name
-            step_count += 1
+                  # add the node relationship to the concept
+                  model[concept_name].push({ :type => 'is a', :name => is_a_name })
 
-          when :has_many
-            has_many_name = humanise(a.name.to_s.singularize.capitalize)
+                  print_debug step_count, "Concept " + concept_name + " is a " + is_a_name
+                  step_count += 1
+                end
+              end
 
-            # add the node relationship to the concept
-            model[concept_name].push({ :type => 'has many', :name => has_many_name })
+              # search for a 'has_one' or 'belongs_to' declaration
+              a, has_one_clazz = line.match(/(has_one|belongs_to) :([^,]+)/).try(:captures)
+              unless has_one_clazz.nil?
+                has_one_name = has_one_clazz.capitalize.singularize.strip
 
-            print_debug step_count, "Concept " + concept_name + " has one " + has_many_name
-            step_count += 1
+                # add the node relationship to the concept
+                model[concept_name].push({ :type => 'has one', :name => has_one_name })
 
-          when :has_and_belongs_to_many
-            # this is a many-to-many, so we add two 'has many' relationships (one of each side)
-            has_many_name = humanise(a.name.to_s.singularize.capitalize)
+                print_debug step_count, "Concept " + concept_name + " has one " + has_one_name
+                step_count += 1
+              end
 
-            # add the first side of the 'has many' if it does not already exist
-            if model[concept_name].find { |v| v[:type] == 'has many' && v[:name] == has_many_name }.nil?
-              model[concept_name].push({ :type => 'has many', :name => has_many_name })
+              # search for a 'has_many' declaration
+              b, has_many_clazz = line.match(/(has_many) :([^,]+)/).try(:captures)
+              unless has_many_clazz.nil?
+                has_many_name = has_many_clazz.capitalize.pluralize.strip
+
+                # add the node relationship to the concept
+                model[concept_name].push({ :type => 'has many', :name => has_many_name })
+
+                print_debug step_count, "Concept " + concept_name + " has one " + has_many_name
+                step_count += 1
+              end
+
+              # search for a 'has_many' declaration
+              c, habtm_clazz = line.match(/(has_and_belongs_to_many) :([^,]+)/).try(:captures)
+              unless habtm_clazz.nil?
+                # this is a many-to-many, so we add two 'has many' relationships (one of each side)
+                habtm_name = habtm_clazz.capitalize.pluralize.strip
+
+                # add the first side of the 'has many' if it does not already exist
+                if model[concept_name].find { |v| v[:type] == 'has many' && v[:name] == habtm_name }.nil?
+                  model[concept_name].push({ :type => 'has many', :name => habtm_name })
+                end
+
+                # if the model hash doesn't have any entry for the many side of the relationship, create it
+                if model[habtm_name].nil?
+                  model[habtm_name] = [ ]
+                end
+
+                # add the second side of the 'has many' if it does not already exist
+                if model[habtm_name].find { |v| v[:type] == 'has many' && v[:name] == concept_name }.nil?
+                  model[habtm_name].push({ :type => 'has many', :name => concept_name })
+                end
+
+                print_debug step_count, "Concept " + concept_name + " has many-to-many with " + habtm_name
+                step_count += 1
+              end
+
             end
-
-            # if the model hash doesn't have any entry for the many side of the relationship, create it
-            if model[has_many_name].nil?
-              model[has_many_name] = [ ]
-            end
-
-            # add the second side of the 'has many' if it does not already exist
-            if model[has_many_name].find { |v| v[:type] == 'has many' && v[:name] == concept_name }.nil?
-              model[has_many_name].push({ :type => 'has many', :name => concept_name })
-            end
-
-            print_debug step_count, "Concept " + concept_name + " has many-to-many with " + has_many_name
-            step_count += 1
-
-          else
-            print_debug step_count, "Did not recognise macro type: " + a.macro.to_s
-            step_count += 1
-
+          end
         end
       }
-    }
+    end
 
     # now generate the PogoScript
     pogo = "conceptual model for \"" + app_name + "\""
@@ -139,19 +164,6 @@ namespace :blueprint do
   end
 
   private
-
-    def self.humanise(str)
-      # this block applies a naming clean-up by camel-casing any words after an underscore (e.g.: Invited_by => InvitedBy)
-
-      tokens = str.scan(/[_]+[\w]/)
-      unless tokens.empty?
-        tokens.each { |t|
-          str[t]= t[-1, 1].capitalize
-        }
-      end
-
-      str
-    end
 
     def self.print_debug(step_count, str)
       if @debug
