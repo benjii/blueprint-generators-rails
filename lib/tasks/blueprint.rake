@@ -4,10 +4,11 @@ namespace :blueprint do
 
   desc 'Generate a Conceptual Model diagram for the current Rails project'
   task :cm, [:options] do |t, args|
-    # Rails.application.eager_load!
 
     # set the debug flag
     @debug = args[:options] == 'debug'
+
+    # TODO perform a sanity check to make sure that this is a Rails project
 
     # we store the detected model in a hash - which we later serialize to PogoScript
     model = { }
@@ -16,17 +17,35 @@ namespace :blueprint do
     step_count = 1
 
     # get the configured app name
-    app_name = Dir.pwd.split('/').last.capitalize
-    # app_name = Rails.application.class.parent_name
+    app_name = nil
 
-    print_debug step_count, "Application name is " + app_name
-    step_count += 1
-
-    unless Dir.exist?(Dir.pwd + '/app/models')
-      print_debug step_count, 'Could not find models directory. Stopping analysis.'
-      return 0
+    # if the config directory can't be found then stop
+    unless Dir.exist?(Dir.pwd + '/config')
+      print_debug step_count, 'Could not find config directory. Stopping analysis.'
+      next
     end
 
+    # otherwise find the application name
+    Dir.chdir(Dir.pwd + '/config') do
+      File.open('application.rb') do |f|
+        f.each_line do |line|
+          m, app_name = line.match(/(module )(.*)/).try(:captures)
+          unless app_name.nil?
+            print_debug step_count, "Application name is " + app_name
+            step_count += 1
+            break
+          end
+        end
+      end
+    end
+
+    # if the models directory can't be found then stop
+    unless Dir.exist?(Dir.pwd + '/app/models')
+      print_debug step_count, 'Could not find models directory. Stopping analysis.'
+      next
+    end
+
+    # otherwise continue analysis
     Dir.chdir(Dir.pwd + '/app/models') do
 
       # list all files in the directory
@@ -37,11 +56,11 @@ namespace :blueprint do
           # puts "Found: #{f}"
 
           # process each file
-          File.open(f) do |m|
+          File.open(f) do |g|
             concept_name = nil
 
             # process each line of the file
-            m.each_line do |line|
+            g.each_line do |line|
 
               # search for the class declaration line
               clazz, super_clazz = line.match(/class ([^<]*) < (.*)/).try(:captures)
