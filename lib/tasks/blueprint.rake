@@ -3,12 +3,35 @@ namespace :blueprint do
   @debug = false
 
   desc 'Generate a Conceptual Model diagram for the current Rails project'
-  task :cm, [:options] do |t, args|
+  task :cm, :root_dir, :debug  do |t, args|
 
-    # set the debug flag
-    @debug = args[:options] == 'debug'
+    root_dir = args[:root_dir] || '.'
+    @debug = args[:debug] || false
 
-    # TODO perform a sanity check to make sure that this is a Rails project
+    if @debug
+      puts "Debug mode #{@debug}"
+      puts "Root directory for analysis is: #{root_dir}"
+    end
+
+    # check that this is actually a Rails projects
+    unless File.exist?(root_dir + '/Gemfile')
+      puts 'No Gemfile found. Is this a Rails project?'
+      next
+    end
+
+    # if the config directory can't be found then stop
+    unless Dir.exist?(root_dir + '/config')
+      puts 'No config directory found. Is this a Rails project?'
+      next
+    end
+
+    # if the models directory can't be found then stop
+    unless Dir.exist?(root_dir + '/app/models')
+      puts 'No app/models directory found. Is this a Rails project?'
+      next
+    end
+
+    # if we get here than all base sanity checks are passed
 
     # we store the detected model in a hash - which we later serialize to PogoScript
     model = { }
@@ -19,14 +42,8 @@ namespace :blueprint do
     # get the configured app name
     app_name = nil
 
-    # if the config directory can't be found then stop
-    unless Dir.exist?(Dir.pwd + '/config')
-      print_debug step_count, 'Could not find config directory. Stopping analysis.'
-      next
-    end
-
     # otherwise find the application name
-    Dir.chdir(Dir.pwd + '/config') do
+    Dir.chdir(root_dir + '/config') do
       File.open('application.rb') do |f|
         f.each_line do |line|
           m, app_name = line.match(/(module )(.*)/).try(:captures)
@@ -39,21 +56,14 @@ namespace :blueprint do
       end
     end
 
-    # if the models directory can't be found then stop
-    unless Dir.exist?(Dir.pwd + '/app/models')
-      print_debug step_count, 'Could not find models directory. Stopping analysis.'
-      next
-    end
-
     # otherwise continue analysis
-    Dir.chdir(Dir.pwd + '/app/models') do
+    Dir.chdir(root_dir + '/app/models') do
 
       # list all files in the directory
       Dir.foreach('.') { |f|
 
         # only deal with files that have a '.rb' extension
         if File.extname(f) == '.rb'
-          # puts "Found: #{f}"
 
           # process each file
           File.open(f) do |g|
@@ -67,7 +77,6 @@ namespace :blueprint do
 
               # if we find a class declaration line, add the new concept to the model
               unless clazz.nil?
-                # puts "Parsed: #{clazz} : #{super_clazz}"
                 concept_name = clazz.pluralize
 
                 # add the concept to the model hash
