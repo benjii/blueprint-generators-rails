@@ -100,7 +100,6 @@ namespace :blueprint do
             end
 
             # search for a 'has_one' or 'belongs_to' declaration
-            # TODO this would find '->' symbols: (has_one) :([^,#\s]+),[\s]*->[\s]*{(.*)}
             a, has_one_clazz = line.match(/(has_one|belongs_to) :([^,#\s]+)/).try(:captures)
             unless has_one_clazz.nil?
               has_one_name = has_one_clazz.classify.singularize.strip
@@ -113,13 +112,31 @@ namespace :blueprint do
             end
 
             # search for a 'has_many' declaration
-            # TODO this would find '->' symbols: (has_many) :([^,#\s]+),[\s]*->[\s]*{(.*)}
-            b, has_many_clazz = line.match(/(has_many) :([^,#\s]+)/).try(:captures)
-            unless has_many_clazz.nil?
-              has_many_name = has_many_clazz.classify.pluralize.strip
+            b, has_many_symbol = line.match(/(has_many) :([^,#\s]+)/).try(:captures)
+            unless has_many_symbol.nil?
+              has_many_name = has_many_symbol.classify.pluralize.strip
+
+              # if this declaration has a class name then make sure that we use it in our model
+              explicit_class_name = line.match(/class_name:[\s]*'(.*)'[,]?/).try(:captures)
+              where_clause = line.match(/(where)/).try(:captures)
+
+              # we behave in one of two ways here (just like Rails)
+              # if there is an explicit class name defined then use that as the model name, otherwise use the has many symbol
+              # also, in the case of an explicit class name being declared, look for a 'where' clause (if we find one then
+              # use the has many symbole as the name of the subset that is being defined)
 
               # add the node relationship to the concept
-              model[concept_name].push({ :type => 'has many', :name => has_many_name })
+              if explicit_class_name.nil? || explicit_class_name.empty?
+                model[concept_name].push({ :type => 'has many', :name => has_many_name })
+              else
+                # puts explicit_class_name.inspect
+                if where_clause.nil? || where_clause.empty?
+                  model[concept_name].push({ :type => 'has many', :name => explicit_class_name.first.pluralize })
+                else
+                  model[concept_name].push({ :type => 'has many', :name => explicit_class_name.first.pluralize,
+                                             :condition => has_many_symbol.capitalize.pluralize })
+                end
+              end
 
               print_debug step_count, "Concept " + concept_name + " has one " + has_many_name
               step_count += 1
@@ -167,7 +184,11 @@ namespace :blueprint do
           when 'has one'
             pogo << "  has one \"" + r[:name] + "\"\n"
           when 'has many'
-            pogo << "  has many \"" + r[:name] + "\"\n"
+            if r.has_key?(:condition) && !r[:condition].nil?
+              pogo << "  has many \"" + r[:name] + "\" that are \"" + r[:condition] + "\"\n"
+            else
+              pogo << "  has many \"" + r[:name] + "\"\n"
+            end
           else
             # TODO implement
         end
@@ -176,7 +197,7 @@ namespace :blueprint do
 
     # output the result
     puts ''
-    puts 'Navigate to the link below and paste the provided script into the editor'
+    puts 'Navigate to the link below and paste the provided script into the editor found at:'
     puts ''
     puts '        http://anaxim.io/scratchpad/'
     puts ''
