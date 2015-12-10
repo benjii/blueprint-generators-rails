@@ -2,11 +2,106 @@ namespace :blueprint do
 
   @debug = false
 
+  desc 'Generate Sequence diagrams for the current Rails project (requires use of semantic tags)'
+  task :seq, :root_dir, :debug  do |t, args|
+
+    root_dir = args[:root_dir] || '.'
+    @debug = args[:debug]
+
+    if @debug
+      puts "Debug mode #{@debug}"
+      puts "Root directory for analysis is: #{root_dir}"
+    end
+
+    # check that this is actually a Rails projects
+    unless File.exist?(root_dir + '/Gemfile')
+      puts 'No Gemfile found. Is this a Rails project?'
+      next
+    end
+
+    # if we get here than all base sanity checks are passed
+
+    # for debugging purposes
+    step_count = 1
+
+    model = { }
+
+    # otherwise continue analysis
+    Dir.chdir(root_dir) do
+      # list all files in the directory - we scan everything (but maybe we shouldn't)
+      Dir.glob('**/*.{rb,js,coffee}').each { |f|
+        file = File.stat f
+
+        if file.file?
+
+          File.open(f).each do |line|
+
+            # we are scanning for things like this:
+            #   # @sequence[test, browser, up, foo bar]
+
+            tag = line.match(/#[\s]*@sequence\[(.*)\]/).try(:captures).try(:first)
+
+            if tag
+              print_debug step_count, "Found sequence tag with values: '#{tag}'"
+              step_count += 1
+
+              name, lane, direction, action = tag.split(',').map(&:strip)
+
+              model[name] ||= { }
+              (model[name][:lanes] ||= [ ]) << lane
+              (model[name][:movements] ||= [ ]) << { :direction => direction, :action => action }
+            end
+          end
+        end
+      }
+
+      # now generate the PogoScript - there may be more than one
+      pogos = [ ]
+
+      model.each { |key, value|
+        pogo = "sequence \"#{key}\" lanes \"#{value[:lanes].uniq.join(',')}\"\n"
+        value[:movements].each { |m|
+          case m[:direction]
+            when 'up'
+              pogo += " up \"#{m[:action]}\"\n"
+            when 'down'
+              pogo += " down \"#{m[:action]}\"\n"
+            when 'fail down'
+              pogo += " fail down if \"#{m[:action]}\"\n"
+            else
+              raise "Direction not recognised when generating PogoScript: #{m[:direction]}"
+          end
+        }
+
+        pogos << pogo
+      }
+
+      puts ''
+      puts 'Navigate to the link below and paste the provided script into the editor found at:'
+      puts ''
+      puts '        http://anaxim.io/scratchpad/'
+      puts ''
+      pogos.each { |pogo|
+        puts '~~~~'
+        puts pogo
+        puts '~~~~'
+      }
+      puts ''
+      puts ''
+
+    end
+
+  end
+
+  desc 'Alias for the \'seq\' task'
+  task :sequence => :seq do
+  end
+
   desc 'Generate a Conceptual Model diagram for the current Rails project'
   task :cm, :root_dir, :debug  do |t, args|
 
     root_dir = args[:root_dir] || '.'
-    @debug = args[:debug] || false
+    @debug = args[:debug]
 
     if @debug
       puts "Debug mode #{@debug}"
@@ -54,7 +149,7 @@ namespace :blueprint do
         f.each_line do |line|
           m, app_name = line.match(/(module )(.*)/).try(:captures)
           unless app_name.nil?
-            print_debug step_count, "Application name is " + app_name
+            print_debug step_count, "Application name is #{app_name}"
             step_count += 1
             break
           end
@@ -66,7 +161,7 @@ namespace :blueprint do
     Dir.chdir(root_dir + '/app/models') do
 
       # list all files in the directory
-      Dir.glob("**/*.rb").each { |f|
+      Dir.glob('**/*.rb').each { |f|
 
         # process each file
         File.open(f) do |g|
@@ -138,7 +233,7 @@ namespace :blueprint do
                 end
               end
 
-              print_debug step_count, "Concept " + concept_name + " has one " + has_many_name
+              print_debug step_count, "Concept #{concept_name} has one #{has_many_name}"
               step_count += 1
             end
 
@@ -163,7 +258,7 @@ namespace :blueprint do
                 model[habtm_name].push({ :type => 'has many', :name => concept_name })
               end
 
-              print_debug step_count, "Concept " + concept_name + " has many-to-many with " + habtm_name
+              print_debug step_count, "Concept #{concept_name} has many-to-many with #{habtm_name}"
               step_count += 1
             end
 
