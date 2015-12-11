@@ -101,12 +101,13 @@ namespace :blueprint do
       puts ''
       puts '        http://anaxim.io/scratchpad/'
       puts ''
+      puts '----'
+      puts '~~~~'
       pogos.each { |pogo|
-        puts '~~~~'
         puts pogo
         puts '~~~~'
       }
-      puts ''
+      puts '----'
       puts ''
 
     end
