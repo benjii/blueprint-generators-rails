@@ -37,19 +37,36 @@ namespace :blueprint do
           File.open(f).each do |line|
 
             # we are scanning for things like this:
-            #   # @sequence[test, browser, up, foo bar]
+            #   # @seq[test, a b]
+            #   # @seq_up[test, a b, foo bar]
+            #   # @seq_down[test, b a, bar foo]
 
-            tag = line.match(/#[\s]*@sequence\[(.*)\]/).try(:captures).try(:first)
+            tag = line.match(/#[\s]*(@seq[_up|down]*\[.*\])/).try(:captures).try(:first)
 
             if tag
-              print_debug step_count, "Found sequence tag with values: '#{tag}'"
+              print_debug step_count, "Found sequence start tag: '#{tag}'"
               step_count += 1
 
-              name, lane, direction, action = tag.split(',').map(&:strip)
+              # extract the tag type and parameters
+              type, parameters = tag.match(/(.*)\[(.*?)\]/).try(:captures)
 
-              model[name] ||= { }
-              (model[name][:lanes] ||= [ ]) << lane
-              (model[name][:movements] ||= [ ]) << { :direction => direction, :action => action }
+              case type
+                when '@seq'
+                  name, lanes = parameters.split(',').map(&:strip)
+                  model[name] ||= { }
+                  model[name][:lanes] ||= lanes.split(' ')
+
+                when '@seq_up'
+                  name, action = parameters.split(',').map(&:strip)
+                  (model[name][:movements] ||= [ ]) << { :direction => :up, :action => action }
+
+                when '@seq_down'
+                  name, action = parameters.split(',').map(&:strip)
+                  (model[name][:movements] ||= [ ]) << { :direction => :down, :action => action }
+
+                else
+                  raise "Tag type #{type} not recognised when generating sequence diagram."
+              end
             end
           end
         end
@@ -59,19 +76,22 @@ namespace :blueprint do
       pogos = [ ]
 
       model.each { |key, value|
-        pogo = "sequence \"#{key}\" lanes \"#{value[:lanes].uniq.join(',')}\"\n"
-        value[:movements].each { |m|
-          case m[:direction]
-            when 'up'
-              pogo += " up \"#{m[:action]}\"\n"
-            when 'down'
-              pogo += " down \"#{m[:action]}\"\n"
-            when 'fail down'
-              pogo += " fail down if \"#{m[:action]}\"\n"
-            else
-              raise "Direction not recognised when generating PogoScript: #{m[:direction]}"
-          end
-        }
+        pogo = "sequence \"#{key}\" lanes \"#{value[:lanes].uniq.join(', ')}\"\n"
+
+        unless value[:movements].nil?
+          value[:movements].each { |m|
+            case m[:direction]
+              when :up
+                pogo += " up \"#{m[:action]}\"\n"
+              when :down
+                pogo += " down \"#{m[:action]}\"\n"
+              when :fail
+                pogo += " fail down if \"#{m[:action]}\"\n"
+              else
+                raise "Direction not recognised when generating PogoScript: #{m[:direction]}"
+            end
+          }
+        end
 
         pogos << pogo
       }
