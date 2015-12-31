@@ -1,5 +1,15 @@
 namespace :blueprint do
 
+  class String
+    def underscore
+      self.gsub(/::/, '/').
+          gsub(/([A-Z]+)([A-Z][a-z])/,'\1_\2').
+          gsub(/([a-z\d])([A-Z])/,'\1_\2').
+          tr('-', '_').
+          downcase
+    end
+  end
+
   @debug = false
 
   desc 'Generate Sequence diagrams for the current Rails project (requires use of semantic tags)'
@@ -99,7 +109,7 @@ namespace :blueprint do
       puts ''
       puts 'Navigate to the link below and paste the provided script into the editor found at:'
       puts ''
-      puts '        http://anaxim.io/scratchpad/'
+      puts '        http://anaxim.io/#/scratchpad'
       puts ''
       puts '----'
       puts '~~~~'
@@ -178,6 +188,19 @@ namespace :blueprint do
       end
     end
 
+    # find the remote git repository name (so that we can link to it directly in our diagrams)
+    git_remotes = `git remote show origin | grep 'Fetch URL: ' 2>&1`
+    repo_url = git_remotes.match(/Fetch URL: (.*).git/).try(:captures)
+    print_debug step_count, "! #{repo_url}"
+    remote_origin_found = !repo_url.empty?
+    if remote_origin_found
+      repo_url = repo_url[0]
+      print_debug step_count, "Remote repository URL is #{repo_url}"
+    else
+      print_debug step_count, 'No remote repository URL found'
+    end
+    step_count += 1
+
     # otherwise continue analysis
     Dir.chdir(root_dir + '/app/models') do
 
@@ -199,18 +222,23 @@ namespace :blueprint do
               concept_name = clazz.pluralize
 
               # add the concept to the model hash
-              model[concept_name] = [ ]
+              if remote_origin_found
+                model[concept_name] = { :at => "#{repo_url}/blob/master/app/models/#{clazz.underscore}.rb#L1",
+                                        :relationships => [ ] }
+              else
+                model[concept_name] = { :relationships => [ ] }
+              end
 
-              print_debug step_count, "Adding concept " + concept_name
+              print_debug step_count, "Adding concept #{concept_name}"
               step_count += 1
 
               unless super_clazz.strip == 'ActiveRecord::Base'
                 is_a_name = super_clazz.singularize
 
                 # add the node relationship to the concept
-                model[concept_name].push({ :type => 'is a', :name => is_a_name })
+                model[concept_name][:relationships].push({ :type => 'is a', :name => is_a_name })
 
-                print_debug step_count, "Concept " + concept_name + " is a " + is_a_name
+                print_debug step_count, "Concept #{concept_name} is a #{is_a_name}"
                 step_count += 1
               end
             end
@@ -221,9 +249,9 @@ namespace :blueprint do
               has_one_name = has_one_clazz.classify.singularize.strip
 
               # add the node relationship to the concept
-              model[concept_name].push({ :type => 'has one', :name => has_one_name })
+              model[concept_name][:relationships].push({ :type => 'has one', :name => has_one_name })
 
-              print_debug step_count, "Concept " + concept_name + " has one " + has_one_name
+              print_debug step_count, "Concept #{concept_name} has one #{has_one_name}"
               step_count += 1
             end
 
@@ -243,14 +271,14 @@ namespace :blueprint do
 
               # add the node relationship to the concept
               if explicit_class_name.nil? || explicit_class_name.empty?
-                model[concept_name].push({ :type => 'has many', :name => has_many_name })
+                model[concept_name][:relationships].push({ :type => 'has many', :name => has_many_name })
               else
                 # puts explicit_class_name.inspect
                 if where_clause.nil? || where_clause.empty?
-                  model[concept_name].push({ :type => 'has many', :name => explicit_class_name.first.pluralize })
+                  model[concept_name][:relationships].push({ :type => 'has many', :name => explicit_class_name.first.pluralize })
                 else
-                  model[concept_name].push({ :type => 'has many', :name => explicit_class_name.first.pluralize,
-                                             :condition => has_many_symbol.capitalize.pluralize })
+                  model[concept_name][:relationships].push({ :type => 'has many', :name => explicit_class_name.first.pluralize,
+                                                             :condition => has_many_symbol.capitalize.pluralize })
                 end
               end
 
@@ -265,8 +293,8 @@ namespace :blueprint do
               habtm_name = habtm_clazz.classify.pluralize.strip
 
               # add the first side of the 'has many' if it does not already exist
-              if model[concept_name].find { |v| v[:type] == 'has many' && v[:name] == habtm_name }.nil?
-                model[concept_name].push({ :type => 'has many', :name => habtm_name })
+              if model[concept_name][:relationships].find { |v| v[:type] == 'has many' && v[:name] == habtm_name }.nil?
+                model[concept_name][:relationships].push({ :type => 'has many', :name => habtm_name })
               end
 
               # if the model hash doesn't have any entry for the many side of the relationship, create it
@@ -275,8 +303,8 @@ namespace :blueprint do
               end
 
               # add the second side of the 'has many' if it does not already exist
-              if model[habtm_name].find { |v| v[:type] == 'has many' && v[:name] == concept_name }.nil?
-                model[habtm_name].push({ :type => 'has many', :name => concept_name })
+              if model[habtm_name][:relationships].find { |v| v[:type] == 'has many' && v[:name] == concept_name }.nil?
+                model[habtm_name][:relationships].push({ :type => 'has many', :name => concept_name })
               end
 
               print_debug step_count, "Concept #{concept_name} has many-to-many with #{habtm_name}"
@@ -290,10 +318,11 @@ namespace :blueprint do
 
     # now generate the PogoScript
     pogo = "conceptual model for \"" + app_name + "\""
-    model.each { |name, relationships|
+    model.each { |name, data|
       pogo << "\n concept \"" + name + "\"\n"
+      pogo << "  at \"" + data[:at] + "\"\n" unless data[:at].blank?
 
-      relationships.each { |r|
+      data[:relationships].each { |r|
         case r[:type]
           when 'is a'
             pogo << "  is a \"" + r[:name] + "\"\n"
@@ -315,7 +344,7 @@ namespace :blueprint do
     puts ''
     puts 'Navigate to the link below and paste the provided script into the editor found at:'
     puts ''
-    puts '        http://anaxim.io/scratchpad/'
+    puts '        http://anaxim.io/#/scratchpad'
     puts ''
     puts '~~~~'
     puts pogo
