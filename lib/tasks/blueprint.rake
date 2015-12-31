@@ -189,17 +189,24 @@ namespace :blueprint do
     end
 
     # find the remote git repository name (so that we can link to it directly in our diagrams)
-    git_remotes = `git remote show origin | grep 'Fetch URL: ' 2>&1`
-    repo_url = git_remotes.match(/Fetch URL: (.*).git/).try(:captures)
-    print_debug step_count, "! #{repo_url}"
-    remote_origin_found = !repo_url.empty?
-    if remote_origin_found
-      repo_url = repo_url[0]
-      print_debug step_count, "Remote repository URL is #{repo_url}"
-    else
-      print_debug step_count, 'No remote repository URL found'
+    remote_origin_found = false
+    repo_url = nil
+
+    Dir.chdir(root_dir) do
+      git_remotes = `git remote show origin | grep 'Fetch URL: ' 2>&1`
+      repo_url = git_remotes.match(/Fetch URL: (.*).git/).try(:captures)
+
+      remote_origin_found = !repo_url.empty?
+
+      if remote_origin_found
+        repo_url = repo_url[0]
+        print_debug step_count, "Remote repository URL is #{repo_url}"
+      else
+        print_debug step_count, 'No remote repository URL found'
+      end
+
+      step_count += 1
     end
-    step_count += 1
 
     # otherwise continue analysis
     Dir.chdir(root_dir + '/app/models') do
