@@ -10,11 +10,132 @@ namespace :blueprint do
     end
   end
 
+  SEQUENCE_TAG_REGEX = /#[\s]*(:seq[_up|down]*\(.*\))/
+  CONCEPT_STATE_REGEX = /#[\s]*(:state*\(.*\))/
+
+  PARAMS_REGEX = /(.*)\((.*?)\)/
+
   @debug = false
+
+  desc 'Generate Concept States diagrams for the current Rails project (requires use of semantic tags)'
+  task :states, :root_dir, :debug  do |t, args|
+    root_dir = args[:root_dir] || '.'
+    @debug = args[:debug]
+
+    if @debug
+      puts "Debug mode #{@debug}"
+      puts "Root directory for analysis is: #{root_dir}"
+    end
+
+    # check that this is actually a Rails projects
+    unless File.exist?(root_dir + '/Gemfile')
+      puts 'No Gemfile found. Is this a Rails project?'
+      next
+    end
+
+    # if we get here than all base sanity checks are passed
+
+    # for debugging purposes
+    step_count = 1
+
+    # find the remote git repository name (so that we can link to it directly in our diagrams)
+    repo_url = determine_remote_repository root_dir
+    remote_origin_found = repo_url.present?
+
+    print_debug step_count, remote_origin_found ? "Remote repository URL is #{repo_url}" : 'No remote repository URL found'
+    step_count += 1
+
+    model = { }
+
+    # otherwise continue analysis
+    Dir.chdir(root_dir) do
+      # list all files in the directory - we scan everything (but maybe we shouldn't)
+      Dir.glob('**/*.{rb,js,coffee}').each { |f|
+        file = File.stat f
+
+        if file.file?
+          line_no = 1
+
+          File.open(f).each do |line|
+
+            # we are scanning for things like this:
+            #   # :state(diagram, debit, state == DR)
+            #   # :state(diagram, high value transaction, amount > 1000)
+
+            tag = line.match(CONCEPT_STATE_REGEX).try(:captures).try(:first)
+
+            if tag
+              print_debug step_count, "Found named concept state tag: '#{tag}'"
+              step_count += 1
+
+              # extract the tag type and parameters
+              type, parameters = tag.match(PARAMS_REGEX).try(:captures)
+
+              case type
+                when ':state'
+                  concept, name, condition = parameters.split(',').map(&:strip)
+                  model[concept] ||= [ ]
+
+                  if remote_origin_found
+                    model[concept].push(
+                      {
+                          :name => name,
+                          :condition => condition,
+                          :at => "#{repo_url}/blob/master/#{f}#L#{line_no}"
+                      }
+                    )
+                  else
+                    model[concept].push(
+                      {
+                          :name => name,
+                          :condition => condition
+                      }
+                    )
+                  end
+                else
+                  raise "Tag type #{type} not recognised when generating concept state diagram."
+              end
+            end
+
+            line_no += 1
+          end
+        end
+      }
+
+      # now generate the PogoScript - there may be more than one
+      pogos = [ ]
+
+      model.each { |key, value|
+        pogo = "states for \"#{key}\"\n"
+
+        value.each { |x|
+          pogo += " is a \"#{x[:name]}\" when \"#{x[:condition]}\"\n"
+          pogo += "  at \"#{x[:at]}\"\n" if x[:at].present?
+          pogo += "\n"
+        }
+
+        pogos << pogo.strip
+      }
+
+      puts ''
+      puts 'Navigate to the link below and paste the provided script into the editor found at:'
+      puts ''
+      puts '        http://anaxim.io/#/scratchpad'
+      puts ''
+      puts '----'
+      puts '~~~~'
+      pogos.each { |pogo|
+        puts pogo
+        puts '~~~~'
+      }
+      puts '----'
+      puts ''
+
+    end
+  end
 
   desc 'Generate Sequence diagrams for the current Rails project (requires use of semantic tags)'
   task :seq, :root_dir, :debug  do |t, args|
-
     root_dir = args[:root_dir] || '.'
     @debug = args[:debug]
 
@@ -43,34 +164,33 @@ namespace :blueprint do
         file = File.stat f
 
         if file.file?
-
           File.open(f).each do |line|
 
             # we are scanning for things like this:
-            #   # @seq[test, a b]
-            #   # @seq_up[test, a b, foo bar]
-            #   # @seq_down[test, b a, bar foo]
+            #   # :seq(test, a b)
+            #   # :seq_up(test, a b, foo bar)
+            #   # :seq_down(test, b a, bar foo)
 
-            tag = line.match(/#[\s]*(@seq[_up|down]*\[.*\])/).try(:captures).try(:first)
+            tag = line.match(SEQUENCE_TAG_REGEX).try(:captures).try(:first)
 
             if tag
               print_debug step_count, "Found sequence start tag: '#{tag}'"
               step_count += 1
 
               # extract the tag type and parameters
-              type, parameters = tag.match(/(.*)\[(.*?)\]/).try(:captures)
+              type, parameters = tag.match(PARAMS_REGEX).try(:captures)
 
               case type
-                when '@seq'
+                when ':seq'
                   name, lanes = parameters.split(',').map(&:strip)
                   model[name] ||= { }
                   model[name][:lanes] ||= lanes.split(' ')
 
-                when '@seq_up'
+                when ':seq_up'
                   name, action = parameters.split(',').map(&:strip)
                   (model[name][:movements] ||= [ ]) << { :direction => :up, :action => action }
 
-                when '@seq_down'
+                when ':seq_down'
                   name, action = parameters.split(',').map(&:strip)
                   (model[name][:movements] ||= [ ]) << { :direction => :down, :action => action }
 
@@ -121,7 +241,6 @@ namespace :blueprint do
       puts ''
 
     end
-
   end
 
   desc 'Alias for the \'seq\' task'
@@ -189,24 +308,11 @@ namespace :blueprint do
     end
 
     # find the remote git repository name (so that we can link to it directly in our diagrams)
-    remote_origin_found = false
-    repo_url = nil
+    repo_url = determine_remote_repository root_dir
+    remote_origin_found = repo_url.present?
 
-    Dir.chdir(root_dir) do
-      git_remotes = `git remote show origin | grep 'Fetch URL: ' 2>&1`
-      repo_url = git_remotes.match(/Fetch URL: (.*).git/).try(:captures)
-
-      remote_origin_found = !repo_url.empty?
-
-      if remote_origin_found
-        repo_url = repo_url[0]
-        print_debug step_count, "Remote repository URL is #{repo_url}"
-      else
-        print_debug step_count, 'No remote repository URL found'
-      end
-
-      step_count += 1
-    end
+    print_debug step_count, remote_origin_found ? "Remote repository URL is #{repo_url}" : 'No remote repository URL found'
+    step_count += 1
 
     # otherwise continue analysis
     Dir.chdir(root_dir + '/app/models') do
@@ -373,6 +479,20 @@ namespace :blueprint do
     def self.print_debug(step_count, str)
       if @debug
         puts "#{step_count}. " + str
+      end
+    end
+
+    def self.determine_remote_repository(root_dir)
+      Dir.chdir(root_dir) do
+        git_remotes = `git remote show origin | grep 'Fetch URL: ' 2>&1`
+        repo_url = git_remotes.match(/Fetch URL: (.*).git/).try(:captures)
+
+        if !repo_url.empty?
+          repo_url = repo_url[0]
+          repo_url
+        else
+          nil
+        end
       end
     end
 
