@@ -346,7 +346,7 @@ namespace :blueprint do
       pogos = [ ]
 
       model.each { |key, value|
-        pogo = "activity \"#{key}\" starts with \"#{value[:start][:state]}\"\n"
+        pogo = "activity \"#{key}\" starts with \"#{value[:start][:state]}\" at \"#{value[:start][:at]}\"\n"
 
         unless value[:actions].nil?
           value[:actions].each { |a|
