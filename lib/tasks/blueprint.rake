@@ -10,8 +10,9 @@ namespace :blueprint do
     end
   end
 
-  SEQUENCE_TAG_REGEX = /#[\s]*(:seq[_up|down]*\(.*\))/
   CONCEPT_STATE_REGEX = /#[\s]*(:state*\(.*\))/
+  SEQUENCE_TAG_REGEX = /#[\s]*(:seq[_up|down]*\(.*\))/
+  ACTIVITY_TAG_REGEX = /#[\s]*(:act[_perform|decide|yes|no|end]*\(.*\))/
 
   PARAMS_REGEX = /(.*)\((.*?)\)/
 
@@ -117,20 +118,7 @@ namespace :blueprint do
         pogos << pogo.strip
       }
 
-      puts ''
-      puts 'Navigate to the link below and paste the provided script into the editor found at:'
-      puts ''
-      puts '        http://anaxim.io/#/scratchpad'
-      puts ''
-      puts '----'
-      puts '~~~~'
-      pogos.each { |pogo|
-        puts pogo
-        puts '~~~~'
-      }
-      puts '----'
-      puts ''
-
+      print_results pogos
     end
   end
 
@@ -174,7 +162,7 @@ namespace :blueprint do
             tag = line.match(SEQUENCE_TAG_REGEX).try(:captures).try(:first)
 
             if tag
-              print_debug step_count, "Found sequence start tag: '#{tag}'"
+              print_debug step_count, "Found sequence tag: '#{tag}'"
               step_count += 1
 
               # extract the tag type and parameters
@@ -226,25 +214,175 @@ namespace :blueprint do
         pogos << pogo
       }
 
-      puts ''
-      puts 'Navigate to the link below and paste the provided script into the editor found at:'
-      puts ''
-      puts '        http://anaxim.io/#/scratchpad'
-      puts ''
-      puts '----'
-      puts '~~~~'
-      pogos.each { |pogo|
-        puts pogo
-        puts '~~~~'
-      }
-      puts '----'
-      puts ''
-
+      print_results pogos
     end
   end
 
   desc 'Alias for the \'seq\' task'
   task :sequence => :seq do
+  end
+
+  desc 'Generate Activity diagrams for the current Rails project (requires use of semantic tags)'
+  task :act, :root_dir, :debug  do |t, args|
+    root_dir = args[:root_dir] || '.'
+    @debug = args[:debug]
+
+    if @debug
+      puts "Debug mode #{@debug}"
+      puts "Root directory for analysis is: #{root_dir}"
+    end
+
+    # check that this is actually a Rails projects
+    unless File.exist?(root_dir + '/Gemfile')
+      puts 'No Gemfile found. Is this a Rails project?'
+      next
+    end
+
+    # if we get here than all base sanity checks are passed
+
+    # for debugging purposes
+    step_count = 1
+
+    # find the remote git repository name (so that we can link to it directly in our diagrams)
+    repo_url = determine_remote_repository root_dir
+    remote_origin_found = repo_url.present?
+
+    print_debug step_count, remote_origin_found ? "Remote repository URL is #{repo_url}" : 'No remote repository URL found'
+    step_count += 1
+
+    model = { }
+
+    # otherwise continue analysis
+    Dir.chdir(root_dir) do
+      # list all files in the directory - we scan everything (but maybe we shouldn't)
+      Dir.glob('**/*.{rb,js,coffee}').each { |f|
+        file = File.stat f
+
+        if file.file?
+          line_no = 1
+
+          File.open(f).each do |line|
+
+            # we are scanning for things like this:
+            #   # :act(Test, start)
+            #   # :act_perform(Test, action)
+            #   # :act_decide(Test, condition)
+            #   # :act_yes(Test, good outcome)
+            #   # :act_no(Test, bad outcome)
+            #   # :act_end(Test, done)
+
+            tag = line.match(ACTIVITY_TAG_REGEX).try(:captures).try(:first)
+
+            if tag
+              print_debug step_count, "Found activity tag: '#{tag}'"
+              step_count += 1
+
+              # extract the tag type and parameters
+              type, parameters = tag.match(PARAMS_REGEX).try(:captures)
+
+              case type
+                when ':act'
+                  name, start_state = parameters.split(',').map(&:strip)
+                  model[name] ||= { }
+
+                  if remote_origin_found
+                    model[name][:start] ||= { :state => start_state, :at => "#{repo_url}/blob/master/#{f}#L#{line_no}" }
+                  else
+                    model[name][:start] ||= { :state => start_state }
+                  end
+
+
+                when ':act_perform'
+                  name, action = parameters.split(',').map(&:strip)
+                  if remote_origin_found
+                    (model[name][:actions] ||= [ ]) << { :type => 'action', :action => action, :at => "#{repo_url}/blob/master/#{f}#L#{line_no}" }
+                  else
+                    (model[name][:actions] ||= [ ]) << { :type => 'action', :action => action }
+                  end
+
+                when ':act_decide'
+                  name, condition = parameters.split(',').map(&:strip)
+                  if remote_origin_found
+                    (model[name][:actions] ||= [ ]) << { :type => 'decision', :condition => condition, :at => "#{repo_url}/blob/master/#{f}#L#{line_no}" }
+                  else
+                    (model[name][:actions] ||= [ ]) << { :type => 'decision', :condition => condition }
+                  end
+
+                when ':act_yes'
+                  name, action = parameters.split(',').map(&:strip)
+                  if remote_origin_found
+                    (model[name][:actions] ||= [ ]) << { :type => 'yes', :action => action, :at => "#{repo_url}/blob/master/#{f}#L#{line_no}" }
+                  else
+                    (model[name][:actions] ||= [ ]) << { :type => 'yes', :action => action }
+                  end
+
+                when ':act_no'
+                  name, action = parameters.split(',').map(&:strip)
+                  if remote_origin_found
+                    (model[name][:actions] ||= [ ]) << { :type => 'no', :action => action, :at => "#{repo_url}/blob/master/#{f}#L#{line_no}" }
+                  else
+                    (model[name][:actions] ||= [ ]) << { :type => 'no', :action => action }
+                  end
+
+                when ':act_end'
+                  name, state = parameters.split(',').map(&:strip)
+                  if remote_origin_found
+                    (model[name][:actions] ||= [ ]) << { :type => 'end', :state => state, :at => "#{repo_url}/blob/master/#{f}#L#{line_no}" }
+                  else
+                    (model[name][:actions] ||= [ ]) << { :type => 'end', :state => state }
+                  end
+
+                else
+                  raise "Tag type #{type} not recognised when generating activity diagram."
+              end
+            end
+
+            line_no += 1
+          end
+        end
+      }
+
+      # now generate the PogoScript - there may be more than one
+      pogos = [ ]
+
+      model.each { |key, value|
+        pogo = "activity \"#{key}\" starts with \"#{value[:start][:state]}\"\n"
+
+        unless value[:actions].nil?
+          value[:actions].each { |a|
+            case a[:type]
+              when 'action'
+                pogo += " perform \"#{a[:action]}\"\n"
+                pogo += "  at \"#{a[:at]}\"\n" if a[:at].present?
+              when 'decision'
+                pogo += " decide \"#{a[:condition]}\"\n"
+                pogo += "  at \"#{a[:at]}\"\n" if a[:at].present?
+              when 'yes'
+                pogo += " yes \"#{a[:action]}\"\n"
+                pogo += "  at \"#{a[:at]}\"\n" if a[:at].present?
+              when 'no'
+                pogo += " no \"#{a[:action]}\"\n"
+                pogo += "  at \"#{a[:at]}\"\n" if a[:at].present?
+              when 'end'
+                pogo += " end \"#{a[:state]}\"\n"
+                pogo += "  at \"#{a[:at]}\"\n" if a[:at].present?
+              else
+                raise "Direction not recognised when generating PogoScript: #{a[:type]}"
+            end
+
+            pogo += "\n"
+          }
+        end
+
+        pogos << pogo.strip
+      }
+
+      print_results pogos
+    end
+  end
+
+  desc 'Alias for the \'act\' task'
+  task :activity => :act do
   end
 
   desc 'Generate a Conceptual Model diagram for the current Rails project'
@@ -495,6 +633,22 @@ namespace :blueprint do
           nil
         end
       end
+    end
+
+    def self.print_results(pogos)
+      puts ''
+      puts 'Navigate to the link below and paste the provided script into the editor found at:'
+      puts ''
+      puts '        http://anaxim.io/#/scratchpad'
+      puts ''
+      puts '----'
+      puts '~~~~'
+      pogos.each { |pogo|
+        puts pogo
+        puts '~~~~'
+      }
+      puts '----'
+      puts ''
     end
 
 end
