@@ -18,6 +18,36 @@ namespace :blueprint do
 
   @debug = false
 
+  desc 'Scans a repository for .blueprint files, extracts the contents, and passes back to the caller'
+  task :scan, :root_dir, :debug  do |t, args|
+    root_dir = args[:root_dir] || '.'
+    @debug = args[:debug]
+
+    if @debug
+      puts "Debug mode #{@debug}"
+      puts "Root directory for analysis is: #{root_dir}"
+    end
+
+    # for debugging purposes
+    step_count = 1
+
+    # find the remote git repository name (so that we can link to it directly in our diagrams)
+    repo_url = determine_remote_repository root_dir
+    remote_origin_found = repo_url.present?
+
+    print_debug step_count, remote_origin_found ? "Remote repository URL is #{repo_url}" : 'No remote repository URL found'
+
+    pogos = [ ]
+
+    Dir.chdir(root_dir) do
+      Dir.glob('**/*.blueprint').each { |f|
+        pogos << File.open(f).read
+      }
+    end
+
+    self.print_results pogos
+  end
+
   desc 'Generate Concept States diagrams for the current Rails project (requires use of semantic tags)'
   task :states, :root_dir, :debug  do |t, args|
     root_dir = args[:root_dir] || '.'
